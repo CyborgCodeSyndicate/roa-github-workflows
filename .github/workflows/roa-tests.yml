@@ -1,0 +1,435 @@
+name: ROA Tests (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      # --- What to run ---
+      kind:
+        type: string
+        required: true
+        description: "Test type to execute: 'api' or 'ui'."
+
+      project_module:
+        type: string
+        required: false
+        default: ""
+        description: "Maven module containing the tests. If empty, runs at repo root without -pl."
+
+      tags_include:
+        type: string
+        required: false
+        default: ""
+        description: "JUnit include tags (comma-separated). If empty, include filter is omitted."
+
+      tags_exclude:
+        type: string
+        required: false
+        default: ""
+        description: "JUnit exclude tags (comma-separated). If empty, exclude filter is omitted."
+
+      max_methods_per_job:
+        type: number
+        required: false
+        default: 20
+        description: "Max test methods per matrix job (splitter maxMethods)."
+
+      parallel_methods:
+        type: boolean
+        required: false
+        default: true
+        description: "Enable method-level parallelization in the splitter."
+
+      max_runners:
+        type: number
+        required: false
+        default: 10
+        description: "Upper bound for number of matrix runners the splitter may produce."
+
+      split_profile:
+        type: string
+        required: false
+        default: "execution-setup"
+        description: "Maven profile for the split step (e.g., 'execution-setup'). Leave empty to skip -P."
+
+      test_profiles:
+        type: string
+        required: false
+        default: "e2e"
+        description: "Maven profiles for the test step. Comma/space/semicolon separated, e.g., 'e2e,smoke'. Empty to skip -P."
+
+      modules:
+        type: string
+        required: false
+        default: ""
+        description: "Optional module list for the split step (used with -pl '<modules>' -am). Empty to run at repo root."
+
+      json_output_name:
+        type: string
+        required: false
+        default: "grouped-tests"
+        description: "Base name (without .json) for splitter output file."
+
+      # --- Test execution knobs ---
+      junit_threads_per_job:
+        type: number
+        required: false
+        default: 5
+        description: "Fixed JUnit parallelism per job."
+
+      mvn_extra_split_args:
+        type: string
+        required: false
+        default: ""
+        description: "Extra args appended to the mvn split command. Empty to omit."
+
+      mvn_extra_test_args:
+        type: string
+        required: false
+        default: ""
+        description: "Extra args appended to the mvn test command. Empty to omit."
+
+      # --- UI/Selenium Grid (used only when kind == 'ui') ---
+      use_grid:
+        type: boolean
+        required: false
+        default: true
+        description: "If true and kind=='ui', start Selenium Grid and run remotely."
+
+      grid_hub_image:
+        type: string
+        required: false
+        default: "selenium/hub:4.10.0"
+        description: "Docker image for Selenium Hub."
+
+      grid_node_image:
+        type: string
+        required: false
+        default: "selenium/node-chrome:4.10.0"
+        description: "Docker image for Selenium Chrome node."
+
+      grid_node_shm:
+        type: string
+        required: false
+        default: "2g"
+        description: "Shared memory size for node container (e.g., '2g')."
+
+      grid_node_max_sessions:
+        type: number
+        required: false
+        default: 5
+        description: "Max parallel sessions per Selenium node."
+
+      headless:
+        type: boolean
+        required: false
+        default: true
+        description: "If true (UI only), run browsers headless."
+
+      # --- Allure ---
+      allure_version:
+        type: string
+        required: false
+        default: "2.29.0"
+        description: "Allure CLI version to install."
+
+      allure_results_path:
+        type: string
+        required: false
+        default: "${{ github.workspace }}/target/allure-results"
+        description: "Path where tests output Allure results."
+
+      # --- Publishing ---
+      pages_publish:
+        type: boolean
+        required: false
+        default: true
+        description: "If true, publish the merged Allure report to GitHub Pages."
+
+    secrets:
+      pages_token:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    name: Split tests
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_name: ${{ steps.names.outputs.artifact_name }}
+      json_file: ${{ steps.names.outputs.json_file }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: names
+        run: |
+          NAME="${{ inputs.json_output_name }}"
+          echo "artifact_name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "json_file=$NAME.json" >> "$GITHUB_OUTPUT"
+
+      - name: Run splitter (engine=junit; enabled=true)
+        run: |
+          JSON="${{ steps.names.outputs.json_file }}"
+          PROFILE="${{ inputs.split_profile }}"
+          MODULES_FLAG=""
+          if [ -n "${{ inputs.modules }}" ]; then
+            MODULES_FLAG="-pl ${{ inputs.modules }} -am"
+          fi
+
+          INCLUDE_ARG=""
+          EXCLUDE_ARG=""
+          if [ -n "${{ inputs.tags_include }}" ]; then
+            INCLUDE_ARG="-DtestSplitter.junit.tags.include=${{ inputs.tags_include }}"
+          fi
+          if [ -n "${{ inputs.tags_exclude }}" ]; then
+            EXCLUDE_ARG="-DtestSplitter.junit.tags.exclude=${{ inputs.tags_exclude }}"
+          fi
+
+          EXTRA_SPLIT_ARGS="${{ inputs.mvn_extra_split_args }}"
+          [ -z "$EXTRA_SPLIT_ARGS" ] && EXTRA_SPLIT_ARGS=""
+
+          mvn -ntp test-compile \
+            $([ -n "$PROFILE" ] && echo "-P$PROFILE") \
+            $MODULES_FLAG \
+            -DtestSplitter.enabled=true \
+            $INCLUDE_ARG \
+            $EXCLUDE_ARG \
+            -DtestSplitter.maxMethods="${{ inputs.max_methods_per_job }}" \
+            -DtestSplitter.test.engine=junit \
+            -DtestSplitter.json.output="${{ inputs.json_output_name }}" \
+            -DtestSplitter.parallel.methods="${{ inputs.parallel_methods }}" \
+            -DtestSplitter.max.number.runners="${{ inputs.max_runners }}" \
+            $EXTRA_SPLIT_ARGS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.artifact_name }}
+          path: ${{ steps.names.outputs.json_file }}
+
+  matrix:
+    name: Build fan-out matrix
+    needs: split
+    runs-on: ubuntu-latest
+    outputs:
+      testMatrix: ${{ steps.mk.outputs.matrix }}
+      matrixCount: ${{ steps.mk.outputs.count }}
+      artifact_name: ${{ needs.split.outputs.artifact_name }}
+      json_file: ${{ needs.split.outputs.json_file }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.split.outputs.artifact_name }}
+          path: .
+
+      - id: mk
+        run: |
+          echo "Reading ${{ needs.split.outputs.json_file }}..."
+          cat "${{ needs.split.outputs.json_file }}"
+          MATRIX_JSON=$(cat "${{ needs.split.outputs.json_file }}")
+          COUNT=$(jq '. | length' "${{ needs.split.outputs.json_file }}")
+          echo "matrix=$MATRIX_JSON" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT"        >> "$GITHUB_OUTPUT"
+
+  run:
+    name: Run ${{ inputs.kind }} tests (matrix)
+    needs: matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        testGroup: ${{ fromJson(needs.matrix.outputs.testMatrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.matrix.outputs.artifact_name }}
+          path: .
+
+      - id: subset
+        run: |
+          jq ".[] | select(.jobIndex==${{ matrix.testGroup.jobIndex }})" "${{ needs.matrix.outputs.json_file }}" > subset.json
+          echo "count=$(jq -r '.classes | length' subset.json)"        >> "$GITHUB_OUTPUT"
+          echo "total=$(jq -r '.totalMethods // 0' subset.json)"       >> "$GITHUB_OUTPUT"
+
+      # --- Selenium Grid (UI only & when requested) ---
+      - name: Install Docker Compose
+        if: ${{ inputs.kind == 'ui' && inputs.use_grid && steps.subset.outputs.count != '0' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose
+
+      - name: Compose file
+        if: ${{ inputs.kind == 'ui' && inputs.use_grid && steps.subset.outputs.count != '0' }}
+        run: |
+          cat > docker-compose.yml <<'YAML'
+          version: "3.9"
+          services:
+            selenium-hub:
+              image: ${{ inputs.grid_hub_image }}
+              container_name: selenium-hub
+              ports: ["4442:4442","4443:4443","4444:4444"]
+            chrome:
+              image: ${{ inputs.grid_node_image }}
+              depends_on: [ selenium-hub ]
+              shm_size: ${{ inputs.grid_node_shm }}
+              environment:
+                - SE_EVENT_BUS_HOST=selenium-hub
+                - SE_EVENT_BUS_PUBLISH_PORT=4442
+                - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+                - SE_NODE_MAX_SESSIONS=${{ inputs.grid_node_max_sessions }}
+                - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+          YAML
+
+      - name: Start Grid
+        if: ${{ inputs.kind == 'ui' && inputs.use_grid && steps.subset.outputs.count != '0' }}
+        run: |
+          total=${{ steps.subset.outputs.total }}
+          max=${{ inputs.junit_threads_per_job }}
+          nodes=$(( (total + max - 1) / max ))
+          echo "Scaling chrome to $nodes node(s)"
+          docker-compose up -d --scale chrome=$nodes
+
+      - name: Wait Grid
+        if: ${{ inputs.kind == 'ui' && inputs.use_grid && steps.subset.outputs.count != '0' }}
+        run: |
+          for i in {1..30}; do
+            ready=$(curl -s http://localhost:4444/status | jq -r '.value.ready' || echo "false")
+            [ "$ready" = "true" ] && echo "Grid ready" && exit 0
+            echo "Waiting Grid ($i/30)"; sleep 2
+          done
+          echo "Grid not ready in time"; exit 1
+
+      # --- Run tests (works for both api & ui; UI optionally adds remote + headless) ---
+      - name: Run tests for this subset
+        if: ${{ steps.subset.outputs.count != '0' }}
+        run: |
+          CLASSES=$(jq -r '.classes | join(",")' subset.json)
+
+          # Decide target modules for pre-build and test (-pl ...)
+          PL_FLAG=""
+          if [ -n "${{ inputs.modules }}" ]; then
+            PL_FLAG='-pl "${{ inputs.modules }}" -am'
+          elif [ -n "${{ inputs.project_module }}" ]; then
+            PL_FLAG='-pl "${{ inputs.project_module }}" -am'
+          fi
+
+          # Optional pre-build to resolve deps quickly
+          if [ -n "$PL_FLAG" ]; then
+            eval mvn -ntp -q -Dmaven.test.skip=true $PL_FLAG clean install
+          else
+            mvn -ntp -q -Dmaven.test.skip=true clean install
+          fi
+
+          # Normalize test profiles: allow comma/space/semicolon separated
+          RAW_PROFILES="${{ inputs.test_profiles }}"
+          NORM_PROFILES=$(echo "$RAW_PROFILES" | tr ' ;' ',' | sed 's/,,*/,/g; s/^,*//; s/,*$//')
+
+          # Trim and conditionally add include/exclude tags
+          TIN=$(echo "${{ inputs.tags_include }}" | xargs)
+          TEX=$(echo "${{ inputs.tags_exclude }}" | xargs)
+          INCLUDE_ARG=""
+          EXCLUDE_ARG=""
+          if [ -n "$TIN" ] && [ "$TIN" != "null" ] && [ "$TIN" != "NULL" ]; then
+            INCLUDE_ARG="-Dinclude.tags=\"$TIN\""
+          fi
+          if [ -n "$TEX" ] && [ "$TEX" != "null" ] && [ "$TEX" != "NULL" ]; then
+            EXCLUDE_ARG="-Dexclude.tags=\"$TEX\""
+          fi
+
+          # Build base test command (with or without -pl)
+          if [ -n "$PL_FLAG" ]; then
+            CMD="mvn -ntp -q -DskipTests=false -Dmaven.test.skip=false $PL_FLAG \
+                 -Dtest=\"$CLASSES\" \
+                 $INCLUDE_ARG \
+                 $EXCLUDE_ARG \
+                 -Djunit.jupiter.execution.parallel.config.fixed.parallelism=${{ inputs.junit_threads_per_job }} \
+                 -Djunit.jupiter.execution.parallel.config.fixed.max-pool-size=${{ inputs.junit_threads_per_job }}"
+          else
+            CMD="mvn -ntp -q -DskipTests=false -Dmaven.test.skip=false \
+                 -Dtest=\"$CLASSES\" \
+                 $INCLUDE_ARG \
+                 $EXCLUDE_ARG \
+                 -Djunit.jupiter.execution.parallel.config.fixed.parallelism=${{ inputs.junit_threads_per_job }} \
+                 -Djunit.jupiter.execution.parallel.config.fixed.max-pool-size=${{ inputs.junit_threads_per_job }}"
+          fi
+
+          # Append -P if any test profiles were provided
+          if [ -n "$NORM_PROFILES" ]; then
+            CMD="$CMD -P$NORM_PROFILES"
+          fi
+
+          # UI-only flags
+          if [ "${{ inputs.kind }}" = "ui" ] && [ "${{ inputs.use_grid }}" = "true" ]; then
+            CMD="$CMD -Dremote.driver.url=http://localhost:4444"
+          fi
+          if [ "${{ inputs.kind }}" = "ui" ] && [ "${{ inputs.headless }}" = "true" ]; then
+            CMD="$CMD -Dheadless=true"
+          fi
+
+          # Extra args from caller
+          if [ -n "${{ inputs.mvn_extra_test_args }}" ]; then
+            CMD="$CMD ${{ inputs.mvn_extra_test_args }}"
+          fi
+
+          echo "Executing: $CMD"
+          eval "$CMD"
+
+      - name: Upload Allure results
+        if: ${{ always() && steps.subset.outputs.count != '0' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: "allure-results-${{ matrix.testGroup.jobIndex }}"
+          path: "${{ inputs.allure_results_path }}"
+
+      - name: Teardown Grid
+        if: ${{ always() && inputs.kind == 'ui' && inputs.use_grid }}
+        run: docker-compose down || true
+
+  merge:
+    name: Merge Allure
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: merged-allure
+          merge-multiple: true
+
+      - name: Install Allure
+        run: |
+          curl -sSLo allure.zip "https://github.com/allure-framework/allure2/releases/download/${{ inputs.allure_version }}/allure-${{ inputs.allure_version }}.zip"
+          unzip -q allure.zip -d /tmp/allure
+          sudo mv "/tmp/allure/allure-${{ inputs.allure_version }}" /opt/allure
+          sudo ln -sf /opt/allure/bin/allure /usr/local/bin/allure
+          allure --version
+
+      - name: Generate report
+        run: |
+          allure generate merged-allure --clean -o allure-report
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final-allure-report
+          path: allure-report
+
+  publish:
+    name: Publish report
+    needs: merge
+    if: ${{ inputs.pages_publish && always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: final-allure-report
+          path: allure-report
+      - uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.pages_token || github.token }}
+          publish_branch: gh-pages
+          publish_dir: allure-report
+          destination_dir: ${{ github.run_number }}
+          keep_files: true
+      - run: echo "### ✅ [Allure Report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
