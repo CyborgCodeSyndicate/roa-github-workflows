@@ -57,12 +57,6 @@ on:
         default: "e2e"
         description: "Maven profiles for the test step. Comma/space/semicolon separated, e.g., 'e2e,smoke'. Empty to skip -P."
 
-      modules:
-        type: string
-        required: false
-        default: ""
-        description: "Optional module list for the split step (used with -pl '<modules>' -am). Empty to run at repo root."
-
       json_output_name:
         type: string
         required: false
@@ -172,26 +166,39 @@ jobs:
         run: |
           JSON="${{ steps.names.outputs.json_file }}"
           PROFILE="${{ inputs.split_profile }}"
-          MODULES_FLAG=""
-          if [ -n "${{ inputs.modules }}" ]; then
-            MODULES_FLAG="-pl ${{ inputs.modules }} -am"
+
+          # Build -pl flag from project_module (optional)
+          PL_FLAG=""
+          if [ -n "${{ inputs.project_module }}" ]; then
+            PL_FLAG='-pl "${{ inputs.project_module }}" -am'
           fi
 
+          # Trim and conditionally add include/exclude tags
+          TIN=$(echo "${{ inputs.tags_include }}" | xargs)
+          TEX=$(echo "${{ inputs.tags_exclude }}" | xargs)
           INCLUDE_ARG=""
           EXCLUDE_ARG=""
-          if [ -n "${{ inputs.tags_include }}" ]; then
-            INCLUDE_ARG="-DtestSplitter.junit.tags.include=${{ inputs.tags_include }}"
+          if [ -n "$TIN" ] && [ "$TIN" != "null" ] && [ "$TIN" != "NULL" ]; then
+            INCLUDE_ARG="-DtestSplitter.junit.tags.include=$TIN"
           fi
-          if [ -n "${{ inputs.tags_exclude }}" ]; then
-            EXCLUDE_ARG="-DtestSplitter.junit.tags.exclude=${{ inputs.tags_exclude }}"
+          if [ -n "$TEX" ] && [ "$TEX" != "null" ] && [ "$TEX" != "NULL" ]; then
+            EXCLUDE_ARG="-DtestSplitter.junit.tags.exclude=$TEX"
           fi
 
           EXTRA_SPLIT_ARGS="${{ inputs.mvn_extra_split_args }}"
           [ -z "$EXTRA_SPLIT_ARGS" ] && EXTRA_SPLIT_ARGS=""
 
+          # Optional pre-build to resolve deps quickly
+          if [ -n "$PL_FLAG" ]; then
+            eval mvn -ntp -q -Dmaven.test.skip=true $PL_FLAG clean install
+          else
+            mvn -ntp -q -Dmaven.test.skip=true clean install
+          fi
+
+          # Execute splitter
           mvn -ntp test-compile \
             $([ -n "$PROFILE" ] && echo "-P$PROFILE") \
-            $MODULES_FLAG \
+            $([ -n "$PL_FLAG" ] && eval echo $PL_FLAG) \
             -DtestSplitter.enabled=true \
             $INCLUDE_ARG \
             $EXCLUDE_ARG \
@@ -307,11 +314,9 @@ jobs:
         run: |
           CLASSES=$(jq -r '.classes | join(",")' subset.json)
 
-          # Decide target modules for pre-build and test (-pl ...)
+          # Build -pl flag from project_module (optional)
           PL_FLAG=""
-          if [ -n "${{ inputs.modules }}" ]; then
-            PL_FLAG='-pl "${{ inputs.modules }}" -am'
-          elif [ -n "${{ inputs.project_module }}" ]; then
+          if [ -n "${{ inputs.project_module }}" ]; then
             PL_FLAG='-pl "${{ inputs.project_module }}" -am'
           fi
 
