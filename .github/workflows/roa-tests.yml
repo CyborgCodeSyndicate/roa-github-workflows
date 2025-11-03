@@ -173,7 +173,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        if: ${{ secrets.maven_user != '' && secrets.maven_token != '' }}
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
         with:
           java_version:         ${{ inputs.java_version }}
@@ -275,7 +274,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        if: ${{ secrets.maven_user != '' && secrets.maven_token != '' }}
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
         with:
           java_version:         ${{ inputs.java_version }}
