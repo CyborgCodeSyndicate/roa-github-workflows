@@ -180,6 +180,23 @@ jobs:
           github_packages_user: ${{ secrets.maven_user }}
           github_packages_token: ${{ secrets.maven_token }}
 
+      - name: Debug Maven Configuration
+        run: |
+          echo "=== Maven Settings ==="
+          cat ~/.m2/settings.xml
+          echo ""
+          echo "=== Effective Settings ==="
+          mvn help:effective-settings -B
+          echo ""
+          echo "=== Project POM ==="
+          cat ${{ inputs.project_module }}/pom.xml | head -n 30
+          echo ""
+          echo "=== Test Maven Connection to GitHub Packages ==="
+          mvn dependency:get \
+            -DremoteRepositories=github-roa-libraries::::https://maven.pkg.github.com/CyborgCodeSyndicate/roa-libraries \
+            -Dartifact=io.cyborgcode.roa:roa-parent:1.1.1-SNAPSHOT-99d502a-19014153087:pom \
+            -B    
+
       - id: names
         run: |
           NAME="${{ inputs.json_output_name }}"
