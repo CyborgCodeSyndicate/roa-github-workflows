@@ -16,16 +16,6 @@ on:
         default: "github-roa-libraries,github-roa-plugins"
         description: "Comma-separated server IDs that match your <repositories>/<pluginRepositories>."
 
-      maven_user:
-        type: string
-        required: true
-        description: "Username for GitHub Packages (usually github.actor for PAT)."
-
-      maven_token:
-        type: string
-        required: true
-        description: "Token for GitHub Packages (PAT with read:packages)."
-
       kind:
         type: string
         required: true
@@ -183,7 +173,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        if: ${{ inputs.maven_user != '' && inputs.maven_token != '' }}
+        if: ${{ secrets.maven_user != '' && secrets.maven_token != '' }}
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
         with:
           java_version:         ${{ inputs.java_version }}
@@ -285,7 +275,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        if: ${{ inputs.maven_user != '' && inputs.maven_token != '' }}
+        if: ${{ secrets.maven_user != '' && secrets.maven_token != '' }}
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
         with:
           java_version:         ${{ inputs.java_version }}
