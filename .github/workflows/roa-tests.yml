@@ -164,6 +164,10 @@ on:
     secrets:
       pages_token:
         required: false
+      maven_user:
+        required: true
+      maven_token:
+        required: true
 
 permissions:
   contents: write
@@ -184,8 +188,8 @@ jobs:
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
-          github_packages_user: ${{ inputs.maven_user }}
-          github_packages_token: ${{ inputs.maven_token }}
+          github_packages_user: ${{ secrets.maven_user }}
+          github_packages_token: ${{ secrets.maven_token }}
 
       - id: names
         run: |
@@ -286,8 +290,8 @@ jobs:
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
-          github_packages_user: ${{ inputs.maven_user }}
-          github_packages_token: ${{ inputs.maven_token }}
+          github_packages_user: ${{ secrets.maven_user }}
+          github_packages_token: ${{ secrets.maven_token }}
 
       - uses: actions/download-artifact@v4
         with:
