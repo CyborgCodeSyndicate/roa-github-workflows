@@ -437,7 +437,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: "allure-results-${{ matrix.testGroup.jobIndex }}"
-          path: "${{ inputs.allure_results_path }}"
+          path: ${{ inputs.project_module != '' && format('{0}/{1}/target/allure-results', github.workspace, inputs.project_module) || format('{0}/target/allure-results', github.workspace) }}
 
       - name: Teardown Grid
         if: ${{ always() && inputs.kind == 'ui' && inputs.use_grid }}
