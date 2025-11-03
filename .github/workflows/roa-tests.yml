@@ -426,6 +426,8 @@ jobs:
           if [ -n "${{ inputs.mvn_extra_test_args }}" ]; then
             CMD="$CMD ${{ inputs.mvn_extra_test_args }}"
           fi
+          
+          CMD="$CMD test"
 
           echo "Executing: $CMD"
           eval "$CMD"
