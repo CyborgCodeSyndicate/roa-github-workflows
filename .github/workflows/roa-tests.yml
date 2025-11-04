@@ -173,7 +173,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
+        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.1
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
