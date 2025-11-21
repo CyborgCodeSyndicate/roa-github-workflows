@@ -75,6 +75,12 @@ on:
         default: "grouped-tests"
         description: "Base name (without .json) for splitter output file."
 
+      parent_version_override:
+        type: string
+        required: false
+        default: ""
+        description: "If provided, runs mvn versions:update-parent to this version before split/build."
+
       # --- Test execution knobs ---
       junit_threads_per_job:
         type: number
@@ -173,12 +179,38 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Maven Environment
-        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.3
+        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
           github_packages_user: ${{ secrets.maven_user }}
           github_packages_token: ${{ secrets.maven_token }}
+
+      - name: Override parent version (optional)
+        if: ${{ inputs.parent_version_override != '' }}
+        run: |
+          echo "📝 Setting parent version to: ${{ inputs.parent_version_override }}"
+          MODULES=$(mvn -q help:evaluate -Dexpression=project.modules -DforceStdout | sed -e 's/[][]//g' -e 's/, */,/g')
+          echo "Detected modules: $MODULES"
+          mvn -B -ntp -pl "$MODULES" versions:update-parent \
+            -DparentVersion="[${{ inputs.parent_version_override }}]" \
+            -DallowSnapshots=true \
+            -DgenerateBackupPoms=false \
+            --no-transfer-progress
+
+      - name: Verify compile (fail fast if broken)
+        run: |
+          # Build -pl flag from project_module (optional)
+          PL_FLAG=""
+          if [ -n "${{ inputs.project_module }}" ]; then
+            PL_FLAG='-pl "${{ inputs.project_module }}" -am'
+          fi
+          echo "🔎 Verifying compile..."
+          if [ -n "$PL_FLAG" ]; then
+            eval mvn -ntp -q -U -DskipTests=true $PL_FLAG compile --no-transfer-progress
+          else
+            mvn -ntp -q -U -DskipTests=true compile --no-transfer-progress
+          fi
 
       - name: Debug Maven Configuration
         run: |
