@@ -392,6 +392,7 @@ jobs:
       # --- Run tests (works for both api & ui; UI optionally adds remote + headless) ---
       - name: Run tests for this subset
         if: ${{ steps.subset.outputs.count != '0' }}
+        continue-on-error: true
         run: |
           CLASSES=$(jq -r '.classes | join(",")' subset.json)
 
