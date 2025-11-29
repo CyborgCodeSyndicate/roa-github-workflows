@@ -3,7 +3,14 @@ name: ROA Tests (Reusable)
 on:
   workflow_call:
     inputs:
-    # --- What to run ---
+      # --- Suite identifier (for parallel invocations in same run) ---
+      suite_name:
+        type: string
+        required: false
+        default: "default"
+        description: "Logical suite identifier; used to namespace artifacts when this workflow is invoked multiple times in the same run."
+
+      # --- What to run ---
       java_version:
         type: string
         required: false
@@ -73,7 +80,7 @@ on:
         type: string
         required: false
         default: "grouped-tests"
-        description: "Base name (without .json) for splitter output file."
+        description: "Base name (without .json) for splitter output file. The suite_name will be appended for uniqueness."
 
       # --- Test execution knobs ---
       junit_threads_per_job:
@@ -194,7 +201,7 @@ jobs:
           echo "Effective repository   = '${{ inputs.repository || github.repository }}'"
           echo "inputs.ref             = '${{ inputs.ref }}'"
           echo "github.ref             = '${{ github.ref }}'"
-          echo "Effective ref          = '${{ inputs.ref || github.ref }}'"    
+          echo "Effective ref          = '${{ inputs.ref || github.ref }}'"
 
       - name: Setup Maven Environment
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
@@ -219,13 +226,17 @@ jobs:
           mvn dependency:get \
             -DremoteRepositories=github-roa-libraries::::https://maven.pkg.github.com/CyborgCodeSyndicate/roa-libraries \
             -Dartifact=io.cyborgcode.roa:roa-parent:1.1.1-SNAPSHOT-99d502a-19014153087:pom \
-            -B    
+            -B
 
       - id: names
         run: |
-          NAME="${{ inputs.json_output_name }}"
-          echo "artifact_name=$NAME" >> "$GITHUB_OUTPUT"
+          BASE="${{ inputs.json_output_name }}"
+          SUITE="${{ inputs.suite_name }}"
+          NAME="${BASE}-${SUITE}"
+
+          echo "artifact_name=$NAME"   >> "$GITHUB_OUTPUT"
           echo "json_file=$NAME.json" >> "$GITHUB_OUTPUT"
+          echo "json_base=$NAME"      >> "$GITHUB_OUTPUT"
 
       - name: Run splitter (engine=junit; enabled=true)
         run: |
@@ -269,7 +280,7 @@ jobs:
             $EXCLUDE_ARG \
             -DtestSplitter.maxMethods="${{ inputs.max_methods_per_job }}" \
             -DtestSplitter.test.engine=junit \
-            -DtestSplitter.json.output="${{ inputs.json_output_name }}" \
+            -DtestSplitter.json.output="${{ steps.names.outputs.json_base }}" \
             -DtestSplitter.parallel.methods="${{ inputs.parallel_methods }}" \
             -DtestSplitter.max.number.runners="${{ inputs.max_runners }}" \
             $EXTRA_SPLIT_ARGS
@@ -454,7 +465,7 @@ jobs:
           if [ -n "${{ inputs.mvn_extra_test_args }}" ]; then
             CMD="$CMD ${{ inputs.mvn_extra_test_args }}"
           fi
-          
+
           CMD="$CMD test"
 
           echo "Executing: $CMD"
@@ -464,7 +475,7 @@ jobs:
         if: ${{ always() && steps.subset.outputs.count != '0' }}
         uses: actions/upload-artifact@v4
         with:
-          name: "allure-results-${{ matrix.testGroup.jobIndex }}"
+          name: "allure-results-${{ inputs.suite_name }}-${{ matrix.testGroup.jobIndex }}"
           path: ${{ inputs.project_module != '' && format('{0}/{1}/target/allure-results', github.workspace, inputs.project_module) || format('{0}/target/allure-results', github.workspace) }}
 
       - name: Teardown Grid
@@ -479,7 +490,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: allure-results-*
+          pattern: allure-results-${{ inputs.suite_name }}-*
           path: merged-allure
           merge-multiple: true
 
@@ -494,9 +505,10 @@ jobs:
       - name: Generate report
         run: |
           allure generate merged-allure --clean -o allure-report
+
       - uses: actions/upload-artifact@v4
         with:
-          name: final-allure-report
+          name: final-allure-report-${{ inputs.suite_name }}
           path: allure-report
 
   publish:
@@ -507,13 +519,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: final-allure-report
+          name: final-allure-report-${{ inputs.suite_name }}
           path: allure-report
+
       - uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.pages_token || github.token }}
           publish_branch: gh-pages
           publish_dir: allure-report
-          destination_dir: ${{ github.run_number }}
+          destination_dir: ${{ format('{0}/{1}', github.run_number, inputs.suite_name) }}
           keep_files: true
-      - run: echo "### ✅ [Allure Report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
+
+      - run: echo "### ✅ [Allure Report - ${{ inputs.suite_name }}](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/${{ inputs.suite_name }}/)" >> $GITHUB_STEP_SUMMARY

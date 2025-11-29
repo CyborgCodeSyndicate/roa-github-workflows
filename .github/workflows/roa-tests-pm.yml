@@ -3,7 +3,7 @@ name: ROA Tests (Reusable)
 on:
   workflow_call:
     inputs:
-    # --- What to run ---
+      # --- What to run ---
       java_version:
         type: string
         required: false
@@ -25,7 +25,7 @@ on:
         type: string
         required: false
         default: ""
-        description: "Maven module containing the tests. If empty, runs at repo root without -pl."
+        description: "Maven module containing the tests. If empty, runs at repo root without -pl. Also used to namespace artifacts."
 
       tags_include:
         type: string
@@ -73,7 +73,7 @@ on:
         type: string
         required: false
         default: "grouped-tests"
-        description: "Base name (without .json) for splitter output file."
+        description: "Base name (without .json) for splitter output file. The project_module (or 'root') is appended automatically."
 
       # --- Test execution knobs ---
       junit_threads_per_job:
@@ -194,7 +194,7 @@ jobs:
           echo "Effective repository   = '${{ inputs.repository || github.repository }}'"
           echo "inputs.ref             = '${{ inputs.ref }}'"
           echo "github.ref             = '${{ github.ref }}'"
-          echo "Effective ref          = '${{ inputs.ref || github.ref }}'"    
+          echo "Effective ref          = '${{ inputs.ref || github.ref }}'"
 
       - name: Setup Maven Environment
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
@@ -213,19 +213,28 @@ jobs:
           mvn help:effective-settings -B
           echo ""
           echo "=== Project POM ==="
-          cat ${{ inputs.project_module }}/pom.xml | head -n 30
+          cat ${{ inputs.project_module }}/pom.xml | head -n 30 || echo "(no module pom)"
           echo ""
           echo "=== Test Maven Connection to GitHub Packages ==="
           mvn dependency:get \
             -DremoteRepositories=github-roa-libraries::::https://maven.pkg.github.com/CyborgCodeSyndicate/roa-libraries \
             -Dartifact=io.cyborgcode.roa:roa-parent:1.1.1-SNAPSHOT-99d502a-19014153087:pom \
-            -B    
+            -B
 
       - id: names
         run: |
-          NAME="${{ inputs.json_output_name }}"
-          echo "artifact_name=$NAME" >> "$GITHUB_OUTPUT"
+          BASE="${{ inputs.json_output_name }}"
+          MOD="${{ inputs.project_module }}"
+          if [ -z "$MOD" ]; then
+            SUFFIX="root"
+          else
+            SUFFIX="$MOD"
+          fi
+          NAME="${BASE}-${SUFFIX}"
+
+          echo "artifact_name=$NAME"   >> "$GITHUB_OUTPUT"
           echo "json_file=$NAME.json" >> "$GITHUB_OUTPUT"
+          echo "json_base=$NAME"      >> "$GITHUB_OUTPUT"
 
       - name: Run splitter (engine=junit; enabled=true)
         run: |
@@ -269,7 +278,7 @@ jobs:
             $EXCLUDE_ARG \
             -DtestSplitter.maxMethods="${{ inputs.max_methods_per_job }}" \
             -DtestSplitter.test.engine=junit \
-            -DtestSplitter.json.output="${{ inputs.json_output_name }}" \
+            -DtestSplitter.json.output="${{ steps.names.outputs.json_base }}" \
             -DtestSplitter.parallel.methods="${{ inputs.parallel_methods }}" \
             -DtestSplitter.max.number.runners="${{ inputs.max_runners }}" \
             $EXTRA_SPLIT_ARGS
@@ -454,7 +463,7 @@ jobs:
           if [ -n "${{ inputs.mvn_extra_test_args }}" ]; then
             CMD="$CMD ${{ inputs.mvn_extra_test_args }}"
           fi
-          
+
           CMD="$CMD test"
 
           echo "Executing: $CMD"
@@ -464,7 +473,7 @@ jobs:
         if: ${{ always() && steps.subset.outputs.count != '0' }}
         uses: actions/upload-artifact@v4
         with:
-          name: "allure-results-${{ matrix.testGroup.jobIndex }}"
+          name: "allure-results-${{ inputs.project_module != '' && inputs.project_module || 'root' }}-${{ matrix.testGroup.jobIndex }}"
           path: ${{ inputs.project_module != '' && format('{0}/{1}/target/allure-results', github.workspace, inputs.project_module) || format('{0}/target/allure-results', github.workspace) }}
 
       - name: Teardown Grid
@@ -479,7 +488,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: allure-results-*
+          pattern: allure-results-${{ inputs.project_module != '' && inputs.project_module || 'root' }}-*
           path: merged-allure
           merge-multiple: true
 
@@ -494,9 +503,10 @@ jobs:
       - name: Generate report
         run: |
           allure generate merged-allure --clean -o allure-report
+
       - uses: actions/upload-artifact@v4
         with:
-          name: final-allure-report
+          name: final-allure-report-${{ inputs.project_module != '' && inputs.project_module || 'root' }}
           path: allure-report
 
   publish:
@@ -507,13 +517,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: final-allure-report
+          name: final-allure-report-${{ inputs.project_module != '' && inputs.project_module || 'root' }}
           path: allure-report
+
       - uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.pages_token || github.token }}
           publish_branch: gh-pages
           publish_dir: allure-report
-          destination_dir: ${{ github.run_number }}
+          destination_dir: ${{ format('{0}/{1}', github.run_number, inputs.project_module != '' && inputs.project_module || 'root') }}
           keep_files: true
-      - run: echo "### ✅ [Allure Report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
+
+      - run: echo "### ✅ [Allure Report - ${{ inputs.project_module != '' && inputs.project_module || 'root' }}](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/${{ inputs.project_module != '' && inputs.project_module || 'root' }}/)" >> $GITHUB_STEP_SUMMARY
