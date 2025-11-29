@@ -157,6 +157,12 @@ on:
         default: ""
         description: "Repository that contains the Maven project under test."
 
+      repoRef:
+        required: false
+        default: ""
+        type: string
+        description: "Branch/commit to checkout"
+
     secrets:
       pages_token:
         required: false
@@ -179,7 +185,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repository || github.repository }}
-          ref: e2e-flow
+          ref: ${{ inputs.repoRef || github.ref }}
+
+      - name: Debug repository and ref
+        run: |
+          echo "inputs.repository      = '${{ inputs.repository }}'"
+          echo "github.repository      = '${{ github.repository }}'"
+          echo "Effective repository   = '${{ inputs.repository || github.repository }}'"
+          echo "inputs.repoRef         = '${{ inputs.repoRef }}'"
+          echo "github.ref             = '${{ github.ref }}'"
+          echo "Effective ref          = '${{ inputs.repoRef || github.ref }}'"    
 
       - name: Setup Maven Environment
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
@@ -300,7 +315,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ inputs.repository || github.repository }}
-          ref: e2e-flow
+          ref: ${{ inputs.repoRef || github.ref }}
 
       - name: Setup Maven Environment
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@main
