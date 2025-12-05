@@ -463,7 +463,7 @@ jobs:
         if: ${{ always() && steps.subset.outputs.count != '0' }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.project_module != '' && format('allure-results-%s-%s', inputs.project_module, matrix.testGroup.jobIndex) || format('allure-results-%s', matrix.testGroup.jobIndex) }}
+          name: ${{ inputs.project_module != '' && format('allure-results-{0}-{1}', inputs.project_module, matrix.testGroup.jobIndex) || format('allure-results-{0}', matrix.testGroup.jobIndex) }}
           path: ${{ inputs.project_module != '' && format('{0}/{1}/target/allure-results', github.workspace, inputs.project_module) || format('{0}/target/allure-results', github.workspace) }}
 
       - name: Teardown Grid
@@ -478,7 +478,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: ${{ inputs.project_module != '' && format('allure-results-%s-*', inputs.project_module) || 'allure-results-[0-9]*' }}
+          pattern: ${{ inputs.project_module != '' && format('allure-results-{0}-*', inputs.project_module) || 'allure-results-[0-9]*' }}
           path: merged-allure
           merge-multiple: true
 
@@ -496,7 +496,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.project_module != '' && format('final-allure-report-%s', inputs.project_module) || 'final-allure-report' }}
+          name: ${{ inputs.project_module != '' && format('final-allure-report-{0}', inputs.project_module) || 'final-allure-report' }}
           path: allure-report
 
   publish:
@@ -507,7 +507,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.project_module != '' && format('final-allure-report-%s', inputs.project_module) || 'final-allure-report' }}
+          name: ${{ inputs.project_module != '' && format('final-allure-report-{0}', inputs.project_module) || 'final-allure-report' }}
           path: allure-report
 
       - uses: peaceiris/actions-gh-pages@v3
