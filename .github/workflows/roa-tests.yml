@@ -187,15 +187,6 @@ jobs:
           repository: ${{ inputs.repository || github.repository }}
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Debug repository and ref
-        run: |
-          echo "inputs.repository      = '${{ inputs.repository }}'"
-          echo "github.repository      = '${{ github.repository }}'"
-          echo "Effective repository   = '${{ inputs.repository || github.repository }}'"
-          echo "inputs.ref             = '${{ inputs.ref }}'"
-          echo "github.ref             = '${{ github.ref }}'"
-          echo "Effective ref          = '${{ inputs.ref || github.ref }}'"    
-
       - name: Setup Maven Environment
         uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
         with:
@@ -387,7 +378,6 @@ jobs:
       # --- Run tests (works for both api & ui; UI optionally adds remote + headless) ---
       - name: Run tests for this subset
         if: ${{ steps.subset.outputs.count != '0' }}
-        continue-on-error: true
         run: |
           CLASSES=$(jq -r '.classes | join(",")' subset.json)
 
