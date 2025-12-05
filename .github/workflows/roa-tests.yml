@@ -3,7 +3,20 @@ name: ROA Tests (Reusable)
 on:
   workflow_call:
     inputs:
-    # --- What to run ---
+      # --- Git checkout (repository & ref) ---
+      repository:
+        type: string
+        required: false
+        default: ""
+        description: "Repository that contains the Maven project under test."
+
+      ref:
+        required: false
+        default: ""
+        type: string
+        description: "Branch/tag/commit to checkout."
+
+      # --- What to run ---
       java_version:
         type: string
         required: false
@@ -151,18 +164,6 @@ on:
         default: true
         description: "If true, publish the merged Allure report to GitHub Pages."
 
-      repository:
-        type: string
-        required: false
-        default: ""
-        description: "Repository that contains the Maven project under test."
-
-      ref:
-        required: false
-        default: ""
-        type: string
-        description: "Branch/commit to checkout"
-
     secrets:
       pages_token:
         required: false
@@ -188,7 +189,7 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
 
       - name: Setup Maven Environment
-        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.2
+        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.3.3
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
@@ -210,13 +211,21 @@ jobs:
           mvn dependency:get \
             -DremoteRepositories=github-roa-libraries::::https://maven.pkg.github.com/CyborgCodeSyndicate/roa-libraries \
             -Dartifact=io.cyborgcode.roa:roa-parent:1.1.1-SNAPSHOT-99d502a-19014153087:pom \
-            -B    
+            -B
 
       - id: names
         run: |
-          NAME="${{ inputs.json_output_name }}"
-          echo "artifact_name=$NAME" >> "$GITHUB_OUTPUT"
+          BASE="${{ inputs.json_output_name }}"
+          MOD="${{ inputs.project_module }}"
+          if [ -z "$MOD" ]; then
+            NAME="$BASE"
+          else
+            NAME="${BASE}-${MOD}"
+          fi
+
+          echo "artifact_name=$NAME"   >> "$GITHUB_OUTPUT"
           echo "json_file=$NAME.json" >> "$GITHUB_OUTPUT"
+          echo "json_base=$NAME"      >> "$GITHUB_OUTPUT"
 
       - name: Run splitter (engine=junit; enabled=true)
         run: |
@@ -260,7 +269,7 @@ jobs:
             $EXCLUDE_ARG \
             -DtestSplitter.maxMethods="${{ inputs.max_methods_per_job }}" \
             -DtestSplitter.test.engine=junit \
-            -DtestSplitter.json.output="${{ inputs.json_output_name }}" \
+            -DtestSplitter.json.output="${{ steps.names.outputs.json_base }}" \
             -DtestSplitter.parallel.methods="${{ inputs.parallel_methods }}" \
             -DtestSplitter.max.number.runners="${{ inputs.max_runners }}" \
             $EXTRA_SPLIT_ARGS
@@ -444,7 +453,7 @@ jobs:
           if [ -n "${{ inputs.mvn_extra_test_args }}" ]; then
             CMD="$CMD ${{ inputs.mvn_extra_test_args }}"
           fi
-          
+
           CMD="$CMD test"
 
           echo "Executing: $CMD"
@@ -454,7 +463,7 @@ jobs:
         if: ${{ always() && steps.subset.outputs.count != '0' }}
         uses: actions/upload-artifact@v4
         with:
-          name: "allure-results-${{ matrix.testGroup.jobIndex }}"
+          name: ${{ inputs.project_module != '' && format('allure-results-%s-%s', inputs.project_module, matrix.testGroup.jobIndex) || format('allure-results-%s', matrix.testGroup.jobIndex) }}
           path: ${{ inputs.project_module != '' && format('{0}/{1}/target/allure-results', github.workspace, inputs.project_module) || format('{0}/target/allure-results', github.workspace) }}
 
       - name: Teardown Grid
@@ -469,7 +478,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: allure-results-*
+          pattern: ${{ inputs.project_module != '' && format('allure-results-%s-*', inputs.project_module) || 'allure-results-[0-9]*' }}
           path: merged-allure
           merge-multiple: true
 
@@ -484,9 +493,10 @@ jobs:
       - name: Generate report
         run: |
           allure generate merged-allure --clean -o allure-report
+
       - uses: actions/upload-artifact@v4
         with:
-          name: final-allure-report
+          name: ${{ inputs.project_module != '' && format('final-allure-report-%s', inputs.project_module) || 'final-allure-report' }}
           path: allure-report
 
   publish:
@@ -497,13 +507,15 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: final-allure-report
+          name: ${{ inputs.project_module != '' && format('final-allure-report-%s', inputs.project_module) || 'final-allure-report' }}
           path: allure-report
+
       - uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.pages_token || github.token }}
           publish_branch: gh-pages
           publish_dir: allure-report
-          destination_dir: ${{ github.run_number }}
+          destination_dir: ${{ inputs.project_module != '' && format('{0}/{1}', github.run_number, inputs.project_module) || format('{0}', github.run_number) }}
           keep_files: true
-      - run: echo "### ✅ [Allure Report](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}/)" >> $GITHUB_STEP_SUMMARY
+
+      - run: echo "### ✅ [Allure Report${{ inputs.project_module != '' && format(' - {0}', inputs.project_module) || '' }}](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/${{ github.run_number }}${{ inputs.project_module != '' && format('/{0}', inputs.project_module) || '' }}/)" >> $GITHUB_STEP_SUMMARY
