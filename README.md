@@ -112,6 +112,10 @@ The workflow uses these with `CyborgCodeSyndicate/utilities/pipelines/deploy` to
 5. **Publish**: Optionally publish the merged Allure report to GitHub Pages (into `gh-pages/<run_number>/`).
 
 ### Inputs (selected)
+- **Git checkout**
+  - `repository` (optional): Repository containing the Maven project under test (defaults to current repo)
+  - `ref` (optional): Branch/tag/commit to checkout (defaults to current ref)
+
 - **Core**
   - `kind` (required): `api` or `ui`
   - `java_version` (default `17`)
@@ -152,6 +156,7 @@ The workflow uses these with `CyborgCodeSyndicate/utilities/pipelines/deploy` to
 - For UI runs, a minimal Selenium Grid is started via `docker-compose` and scaled based on the test subset size and `junit_threads_per_job`.
 - Allure is downloaded and invoked directly to merge and generate the report.
 - Allure results are uploaded from `target/allure-results` (or `<project_module>/target/allure-results` when set).
+- When `project_module` is specified, artifacts are named with the module suffix (e.g., `allure-results-{module}-{jobIndex}`) and Pages are published to `{run_number}/{module}`.
 - A run summary includes a direct link to the published Allure report when `pages_publish` is true.
 
 *Note: An `allure_results_path` input exists but the workflow computes the upload path from Maven defaults; override behavior by adjusting the upload step if your project writes to a different directory.*
