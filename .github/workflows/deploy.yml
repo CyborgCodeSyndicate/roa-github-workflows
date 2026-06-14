@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Deploy pipeline
-        uses: CyborgCodeSyndicate/utilities/pipelines/deploy@v1.0.0-rc-2
+        uses: CyborgCodeSyndicate/utilities/pipelines/deploy@v1.0.0-rc-3
         with:
           server_ids: github-roa-github-workflows
           version_bump: ${{ inputs.version_bump || 'none' }}

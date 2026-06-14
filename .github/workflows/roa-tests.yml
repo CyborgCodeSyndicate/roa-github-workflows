@@ -190,7 +190,7 @@ jobs:
 
       - name: Setup Maven (org only)
         if: ${{ github.repository_owner == 'CyborgCodeSyndicate'}}
-        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.0.0-rc-2
+        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.0.0-rc-3
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
@@ -311,7 +311,7 @@ jobs:
 
       - name: Setup Maven Environment
         if: ${{ github.repository_owner == 'CyborgCodeSyndicate'}}
-        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.0.0-rc-2
+        uses: CyborgCodeSyndicate/utilities/pipelines/shared/setup-maven@v1.0.0-rc-3
         with:
           java_version:         ${{ inputs.java_version }}
           server_ids:           ${{ inputs.maven_server_ids }}
